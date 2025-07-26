@@ -58,7 +58,7 @@ async def handle_spotify_login(message: types.Message):
     login = user_data[message.from_user.id]['login']
     tg_username = message.from_user.username or 'без ника'
 
-    # Сообщение клиенту (без ссылки оплаты)
+    # Сообщение клиенту
     await message.answer(
         "✅ Спасибо за заказ!\n\n"
         "Ожидайте подтверждения от менеджера."
