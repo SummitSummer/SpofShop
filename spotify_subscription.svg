@@ -1,22 +1,88 @@
-
-        <svg width="400" height="300" xmlns="http://www.w3.org/2000/svg">
-            <defs>
-                <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-                    <stop offset="0%" style="stop-color:#1DB954;stop-opacity:1" />
-                    <stop offset="100%" style="stop-color:#1ed760;stop-opacity:1" />
-                </linearGradient>
-            </defs>
-            <rect width="400" height="300" fill="url(#bg)" rx="20"/>
-            <text x="200" y="50" text-anchor="middle" fill="white" font-size="24" font-weight="bold">Spotify Premium</text>
-            <text x="200" y="80" text-anchor="middle" fill="white" font-size="16">Family подписка</text>
-            <circle cx="100" cy="150" r="30" fill="white" opacity="0.9"/>
-            <text x="100" y="155" text-anchor="middle" fill="#1DB954" font-size="20">🎵</text>
-            <circle cx="200" cy="150" r="30" fill="white" opacity="0.9"/>
-            <text x="200" y="155" text-anchor="middle" fill="#1DB954" font-size="20">🎧</text>
-            <circle cx="300" cy="150" r="30" fill="white" opacity="0.9"/>
-            <text x="300" y="155" text-anchor="middle" fill="#1DB954" font-size="20">📱</text>
-            <text x="200" y="220" text-anchor="middle" fill="white" font-size="16">Безлимитная музыка</text>
-            <text x="200" y="240" text-anchor="middle" fill="white" font-size="16">Высокое качество</text>
-            <text x="200" y="260" text-anchor="middle" fill="white" font-size="16">Без рекламы</text>
-        </svg>
-        
+<svg width="400" height="300" viewBox="0 0 400 300" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="spotifyGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1DB954;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1ed760;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="backgroundGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#191414;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#121212;stop-opacity:1" />
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+      <feMerge> 
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="400" height="300" fill="url(#backgroundGradient)" rx="20"/>
+  
+  <!-- Spotify logo circle -->
+  <circle cx="200" cy="120" r="50" fill="url(#spotifyGradient)" filter="url(#glow)"/>
+  
+  <!-- Spotify logo curves -->
+  <g transform="translate(200,120)" fill="#191414">
+    <!-- Large curve -->
+    <path d="M -25,-10 Q -10,-20 10,-15 Q 25,-10 30,-5 Q 25,0 10,5 Q -10,10 -25,0 Z" opacity="0.9"/>
+    <!-- Medium curve -->
+    <path d="M -20,-3 Q -8,-10 8,-8 Q 20,-6 22,-2 Q 18,2 8,3 Q -8,5 -20,2 Z" opacity="0.8"/>
+    <!-- Small curve -->
+    <path d="M -15,4 Q -5,0 5,2 Q 15,4 16,7 Q 12,9 5,8 Q -5,7 -15,9 Z" opacity="0.7"/>
+  </g>
+  
+  <!-- Title -->
+  <text x="200" y="200" text-anchor="middle" fill="#FFFFFF" font-family="Arial, sans-serif" font-size="24" font-weight="bold">
+    Spotify Premium
+  </text>
+  
+  <!-- Subtitle -->
+  <text x="200" y="225" text-anchor="middle" fill="#B3B3B3" font-family="Arial, sans-serif" font-size="16">
+    Family Subscription
+  </text>
+  
+  <!-- Premium features icons -->
+  <g fill="#1DB954" font-family="Arial, sans-serif" font-size="12">
+    <!-- No ads icon -->
+    <circle cx="80" cy="250" r="3"/>
+    <text x="90" y="255" fill="#FFFFFF">No Ads</text>
+    
+    <!-- High quality icon -->
+    <circle cx="160" cy="250" r="3"/>
+    <text x="170" y="255" fill="#FFFFFF">HD Audio</text>
+    
+    <!-- Offline icon -->
+    <circle cx="240" cy="250" r="3"/>
+    <text x="250" y="255" fill="#FFFFFF">Offline</text>
+    
+    <!-- Unlimited icon -->
+    <circle cx="320" cy="250" r="3"/>
+    <text x="330" y="255" fill="#FFFFFF">Unlimited</text>
+  </g>
+  
+  <!-- Decorative sound waves -->
+  <g stroke="#1DB954" stroke-width="2" fill="none" opacity="0.3">
+    <!-- Left waves -->
+    <path d="M 30,120 Q 40,110 50,120 Q 60,130 70,120"/>
+    <path d="M 25,120 Q 35,105 45,120 Q 55,135 65,120"/>
+    <path d="M 20,120 Q 30,100 40,120 Q 50,140 60,120"/>
+    
+    <!-- Right waves -->
+    <path d="M 330,120 Q 340,110 350,120 Q 360,130 370,120"/>
+    <path d="M 335,120 Q 345,105 355,120 Q 365,135 375,120"/>
+    <path d="M 340,120 Q 350,100 360,120 Q 370,140 380,120"/>
+  </g>
+  
+  <!-- Floating music notes -->
+  <g fill="#1DB954" opacity="0.6">
+    <text x="100" y="80" font-family="Arial" font-size="16">♪</text>
+    <text x="300" y="90" font-family="Arial" font-size="20">♫</text>
+    <text x="120" y="180" font-family="Arial" font-size="14">♪</text>
+    <text x="280" y="170" font-family="Arial" font-size="18">♫</text>
+  </g>
+  
+  <!-- Subtle shine effect -->
+  <ellipse cx="180" cy="100" rx="15" ry="30" fill="#FFFFFF" opacity="0.1" transform="rotate(-30 180 100)"/>
+</svg>

@@ -1,21 +1,49 @@
 import logging
 from aiogram import types
 from aiogram.fsm.context import FSMContext
-
 from config import SUBSCRIPTION_PLANS, ADMIN_ID
 from states import OrderState
 from keyboards import (
-    get_main_menu_keyboard, get_subscription_keyboard, get_payment_keyboard, 
+    get_main_menu_keyboard, get_subscription_keyboard, get_payment_keyboard,
     get_back_to_start_keyboard, get_back_to_menu_keyboard
 )
-from storage import order_storage
+from models import User, Order, SubscriptionPlan, db
+from app import app
+from digiseller import generate_payment_url
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
+
+def get_or_create_user(telegram_user):
+    """Получить или создать пользователя в базе данных"""
+    with app.app_context():
+        user = User.query.filter_by(id=telegram_user.id).first()
+        if not user:
+            user = User(
+                id=telegram_user.id,
+                username=telegram_user.username,
+                first_name=telegram_user.first_name,
+                last_name=telegram_user.last_name,
+                language_code=telegram_user.language_code
+            )
+            db.session.add(user)
+            db.session.commit()
+        else:
+            # Обновляем данные пользователя
+            user.username = telegram_user.username
+            user.first_name = telegram_user.first_name
+            user.last_name = telegram_user.last_name
+            user.last_activity = datetime.utcnow()
+            db.session.commit()
+        return user
 
 async def cmd_start(message: types.Message, state: FSMContext):
     """Обработчик команды /start - показывает главное меню с изображением"""
     # Очищаем предыдущие состояния
     await state.clear()
+    
+    # Регистрируем/обновляем пользователя
+    user = get_or_create_user(message.from_user)
     
     welcome_text = (
         "🎵 **Добро пожаловать в Spotify Family Bot!** 🎵\n\n"
@@ -47,12 +75,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
 
 async def handle_order_subscription(callback_query: types.CallbackQuery, state: FSMContext):
     """Обработчик кнопки оформления подписки"""
-    user_id = callback_query.from_user.id if callback_query.from_user else 0
-    user_data = {
-        "username": callback_query.from_user.username if callback_query.from_user else None,
-        "first_name": callback_query.from_user.first_name if callback_query.from_user else None
-    }
-    order_storage.create_order(user_id, user_data)
+    user = get_or_create_user(callback_query.from_user)
     
     subscription_text = (
         "🎵 **Выберите план подписки Spotify Premium:**\n\n"
@@ -94,6 +117,7 @@ async def handle_support(callback_query: types.CallbackQuery):
     )
     
     keyboard = get_back_to_menu_keyboard()
+    
     if callback_query.message:
         # Удаляем сообщение с изображением и отправляем новое текстовое
         await callback_query.message.delete()
@@ -103,39 +127,33 @@ async def handle_support(callback_query: types.CallbackQuery):
             reply_markup=keyboard,
             parse_mode="Markdown"
         )
+    
     await callback_query.answer()
 
 async def handle_faq(callback_query: types.CallbackQuery):
     """Обработчик кнопки FAQ"""
     faq_text = (
         "📖 **Часто задаваемые вопросы**\n\n"
-        
         "1️⃣ **Это официальная подписка?**\n"
         "— Да, это настоящая подписка Spotify Premium через семейный план.\n\n"
-        
         "2️⃣ **Нужно ли что-то платить каждый месяц?**\n"
         "— Нет. Вы платите один раз за выбранный срок (1 / 3 / 6 / 12 месяцев).\n\n"
-        
         "3️⃣ **Что мне нужно для подключения?**\n"
         "— Логин и пароль от Spotify аккаунта.\n\n"
-        
         "4️⃣ **Как происходит добавление в семью?**\n"
         "— Мы отправляем приглашение в семью Spotify, вы подтверждаете адрес.\n\n"
-        
         "5️⃣ **Это безопасно?**\n"
         "— Да. Данные используются только для добавления в семью и не передаются третьим лицам.\n\n"
-        
         "6️⃣ **Сколько времени занимает подключение?**\n"
         "— От 5 до 30 минут. Иногда до 2 часов.\n\n"
-        
         "7️⃣ **Что если меня удалят из семьи?**\n"
         "— Мы восстановим вас бесплатно, если срок ещё не истёк.\n\n"
-        
         "8️⃣ **Можно ли продлить подписку?**\n"
         "— Да, просто оформите новый срок через бота."
     )
     
     keyboard = get_back_to_menu_keyboard()
+    
     if callback_query.message:
         # Удаляем сообщение с изображением и отправляем новое текстовое
         await callback_query.message.delete()
@@ -145,6 +163,7 @@ async def handle_faq(callback_query: types.CallbackQuery):
             reply_markup=keyboard,
             parse_mode="Markdown"
         )
+    
     await callback_query.answer()
 
 async def handle_back_to_menu(callback_query: types.CallbackQuery, state: FSMContext):
@@ -163,10 +182,10 @@ async def handle_back_to_menu(callback_query: types.CallbackQuery, state: FSMCon
     )
     
     keyboard = get_main_menu_keyboard()
+    
     if callback_query.message:
         # Удаляем текущее сообщение и отправляем новое с изображением
         await callback_query.message.delete()
-        
         try:
             # Отправляем главное меню с изображением
             from aiogram.types import FSInputFile
@@ -187,29 +206,39 @@ async def handle_back_to_menu(callback_query: types.CallbackQuery, state: FSMCon
                 reply_markup=keyboard,
                 parse_mode="Markdown"
             )
+    
     await callback_query.answer()
 
 async def process_plan_selection(callback_query: types.CallbackQuery, state: FSMContext):
     """Обработка выбора плана подписки"""
     plan_id = callback_query.data.replace("select_plan_", "") if callback_query.data else ""
     
-    if plan_id not in SUBSCRIPTION_PLANS:
-        await callback_query.answer("❌ Неверный план подписки")
-        return
-    
-    plan_info = SUBSCRIPTION_PLANS[plan_id]
-    
-    # Сохраняем выбранный план
-    await state.update_data(selected_plan=plan_id)
-    user_id = callback_query.from_user.id if callback_query.from_user else 0
-    order_storage.update_order(
-        user_id,
-        subscription_plan=plan_info
-    )
+    with app.app_context():
+        plan = SubscriptionPlan.query.filter_by(id=plan_id).first()
+        if not plan:
+            await callback_query.answer("❌ Неверный план подписки")
+            return
+        
+        # Создаем заказ в базе данных
+        order_count = Order.query.count() + 1
+        order_id = f"ORDER_{order_count:05d}"
+        
+        order = Order(
+            id=order_id,
+            user_id=callback_query.from_user.id,
+            plan_id=plan_id,
+            total_amount=plan.price,
+            status='created'
+        )
+        db.session.add(order)
+        db.session.commit()
+        
+        # Сохраняем ID заказа в состоянии
+        await state.update_data(order_id=order_id, selected_plan=plan_id)
     
     # Запрашиваем логин от Spotify с подробными инструкциями
     text = (
-        f"✅ **Выбрана подписка:** {plan_info['name']} — {plan_info['price']}₽\n\n"
+        f"✅ **Выбрана подписка:** {plan.name} — {plan.price}₽\n\n"
         "📧 **Введите данные от Spotify:**\n\n"
         "⚠️ **ВАЖНО:**\n"
         "• Введите данные в формате: **логин:пароль**\n"
@@ -222,8 +251,10 @@ async def process_plan_selection(callback_query: types.CallbackQuery, state: FSM
     )
     
     keyboard = get_back_to_menu_keyboard()
+    
     if callback_query.message:
         await callback_query.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
+    
     await state.set_state(OrderState.entering_spotify_login)
     await callback_query.answer()
 
@@ -231,7 +262,7 @@ async def process_spotify_login(message: types.Message, state: FSMContext):
     """Обработка ввода логина Spotify"""
     if not message.text:
         return
-        
+    
     spotify_login = message.text.strip()
     
     # Валидация формата логин:пароль
@@ -250,39 +281,40 @@ async def process_spotify_login(message: types.Message, state: FSMContext):
         )
         return
     
-    # Сохраняем логин
-    await state.update_data(spotify_login=spotify_login)
-    user_id = message.from_user.id if message.from_user else 0
-    order_storage.update_order(
-        user_id,
-        spotify_login=spotify_login
-    )
-    
-    # Генерируем фиктивную ссылку на оплату
+    # Получаем данные заказа из состояния
     state_data = await state.get_data()
-    plan_id = state_data.get("selected_plan")
-    if not plan_id or plan_id not in SUBSCRIPTION_PLANS:
-        return
+    order_id = state_data.get("order_id")
+    
+    with app.app_context():
+        order = Order.query.filter_by(id=order_id).first()
+        if not order:
+            await message.answer("❌ Заказ не найден")
+            return
         
-    plan_info = SUBSCRIPTION_PLANS[plan_id]
-    
-    # Фиктивная ссылка на оплату
-    payment_url = f"https://payment-gateway.example.com/pay?order_id={state_data.get('order_id')}&amount={plan_info['price']}"
-    
-    await state.update_data(payment_url=payment_url)
-    user_id = message.from_user.id if message.from_user else 0
-    order_storage.update_order(
-        user_id,
-        payment_url=payment_url,
-        status="awaiting_payment"
-    )
+        # Обновляем заказ с данными Spotify
+        order.spotify_login = login_parts[0]
+        order.spotify_password = login_parts[1]  # В реальном проекте следует шифровать
+        
+        # Генерируем ссылку на оплату через Digiseller
+        try:
+            payment_url = generate_payment_url(order)
+            order.payment_url = payment_url
+            order.status = 'awaiting_payment'
+        except Exception as e:
+            logger.error(f"Ошибка генерации ссылки на оплату: {e}")
+            payment_url = f"https://payment-gateway.example.com/pay?order_id={order_id}&amount={order.total_amount}"
+            order.payment_url = payment_url
+        
+        db.session.commit()
+        
+        plan = order.subscription_plan
     
     # Отправляем сообщение с оплатой
     payment_text = (
-        f"💳 **К оплате:** {plan_info['price']}₽\n\n"
+        f"💳 **К оплате:** {plan.price}₽\n\n"
         f"📋 **Детали заказа:**\n"
-        f"• **Подписка:** {plan_info['name']}\n"
-        f"• **Spotify аккаунт:** {spotify_login}\n\n"
+        f"• **Подписка:** {plan.name}\n"
+        f"• **Spotify аккаунт:** {login_parts[0]}\n\n"
         "🔥 **Что делать дальше:**\n"
         "1️⃣ Нажмите кнопку **'💳 Оплатить'**\n"
         "2️⃣ Совершите платеж\n"
@@ -291,25 +323,29 @@ async def process_spotify_login(message: types.Message, state: FSMContext):
     )
     
     keyboard = get_payment_keyboard(payment_url)
+    
     await message.answer(payment_text, reply_markup=keyboard, parse_mode="Markdown")
     await state.set_state(OrderState.payment_processing)
 
 async def process_payment_completed(callback_query: types.CallbackQuery, state: FSMContext):
     """Обработка подтверждения оплаты"""
-    user_id = callback_query.from_user.id if callback_query.from_user else 0
-    order = order_storage.get_order(user_id)
+    state_data = await state.get_data()
+    order_id = state_data.get("order_id")
     
-    if not order:
-        await callback_query.answer("❌ Заказ не найден")
-        return
-    
-    # Завершаем заказ
-    order_storage.complete_order(user_id)
+    with app.app_context():
+        order = Order.query.filter_by(id=order_id).first()
+        if not order:
+            await callback_query.answer("❌ Заказ не найден")
+            return
+        
+        # Обновляем статус заказа
+        order.status = 'paid'
+        db.session.commit()
     
     # Уведомляем пользователя
     success_text = (
-        "✅ Оплата успешно обработана!\n\n"
-        "📞 Администратор свяжется с вами в ближайшее время для активации подписки.\n"
+        "✅ Заявка на оплату принята!\n\n"
+        "📞 Администратор проверит платеж и свяжется с вами в ближайшее время для активации подписки.\n"
         "Обычно это занимает до 24 часов."
     )
     
@@ -317,109 +353,64 @@ async def process_payment_completed(callback_query: types.CallbackQuery, state: 
         await callback_query.message.edit_text(success_text, reply_markup=get_back_to_start_keyboard())
     
     # Уведомляем администратора
-    if callback_query.bot:
-        await notify_admin_about_order(callback_query.bot, order)
-    
-    await state.set_state(OrderState.order_completed)
-    await callback_query.answer("✅ Оплата подтверждена!")
-
-async def notify_admin_about_order(bot, order):
-    """Отправляет уведомление администратору о новом заказе"""
     try:
-        admin_text = (
-            "🔔 Новый оплаченный заказ:\n\n"
-            f"📋 ID заказа: {order['order_id']}\n"
-            f"📅 Подписка: {order['subscription_plan']['name']} - {order['subscription_plan']['price']}₽\n"
-            f"📧 Spotify логин: {order['spotify_login']}\n"
-            f"👤 Пользователь: {order['first_name']}\n"
-            f"📱 Telegram: @{order['username'] or 'не указан'}\n"
-            f"🆔 User ID: {order['user_id']}\n"
-            f"⏰ Время заказа: {order['created_at']}"
+        admin_msg = (
+            f"🔔 **Новый заказ на проверку!**\n\n"
+            f"**Заказ:** {order_id}\n"
+            f"**Пользователь:** @{callback_query.from_user.username or 'без username'}\n"
+            f"**Имя:** {callback_query.from_user.first_name}\n"
+            f"**ID:** {callback_query.from_user.id}\n"
+            f"**План:** {order.subscription_plan.name}\n"
+            f"**Сумма:** {order.total_amount}₽\n"
+            f"**Spotify логин:** {order.spotify_login}\n\n"
+            f"🔗 **Ссылка на оплату:** {order.payment_url}"
         )
         
-        await bot.send_message(ADMIN_ID, admin_text)
-        logger.info(f"Уведомление администратору отправлено для заказа {order['order_id']}")
-        
+        await callback_query.bot.send_message(ADMIN_ID, admin_msg, parse_mode="Markdown")
     except Exception as e:
         logger.error(f"Ошибка отправки уведомления администратору: {e}")
+    
+    await state.clear()
+    await callback_query.answer()
 
 async def process_start_over(callback_query: types.CallbackQuery, state: FSMContext):
     """Обработка кнопки 'Начать заново'"""
     await state.clear()
-    
-    # Создаем новое сообщение как /start
-    if callback_query.message:
-        await cmd_start(callback_query.message, state)
+    await cmd_start(callback_query.message, state)
     await callback_query.answer()
 
-async def handle_unknown_message(message: types.Message, state: FSMContext):
-    """Обработка неизвестных сообщений в состояниях"""
-    current_state = await state.get_state()
+async def handle_unknown_message(message: types.Message):
+    """Обработчик неизвестных сообщений"""
+    unknown_text = (
+        "❓ Я не понимаю эту команду.\n\n"
+        "Используйте кнопки меню для навигации или введите /start для перезапуска бота."
+    )
     
-    if current_state == OrderState.choosing_subscription:
-        await message.answer(
-            "Пожалуйста, выберите план подписки, используя кнопки выше.",
-            reply_markup=get_back_to_start_keyboard()
-        )
-    elif current_state == OrderState.entering_spotify_login:
-        await message.answer(
-            "Пожалуйста, введите ваш логин/почту от Spotify:",
-            reply_markup=get_back_to_start_keyboard()
-        )
-    elif current_state == OrderState.payment_processing:
-        await message.answer(
-            "Пожалуйста, используйте кнопки для оплаты выше.",
-            reply_markup=get_back_to_start_keyboard()
-        )
-    else:
-        await message.answer(
-            "Для начала работы с ботом нажмите /start",
-            reply_markup=get_back_to_start_keyboard()
-        )
+    keyboard = get_back_to_start_keyboard()
+    await message.answer(unknown_text, reply_markup=keyboard)
 
-# Команда для администратора для просмотра заказов
 async def cmd_admin_orders(message: types.Message):
-    """Команда для администратора для просмотра всех заказов"""
-    user_id = message.from_user.id if message.from_user else 0
-    if str(user_id) != ADMIN_ID:
-        await message.answer("❌ У вас нет доступа к этой команде.")
+    """Команда для просмотра заказов (только для админов)"""
+    if message.from_user.id != ADMIN_ID:
         return
     
-    orders = order_storage.get_all_orders()
-    
-    if not orders:
-        await message.answer("📋 Заказов пока нет.")
-        return
-    
-    response_parts = ["📋 Все заказы:\n"]
-    
-    for user_id, order in orders.items():
-        order_info = (
-            f"\n🆔 {order['order_id']}\n"
-            f"👤 {order['first_name']} (@{order.get('username', 'не указан')})\n"
-            f"📧 {order.get('spotify_login', 'не указан')}\n"
-            f"📅 {order.get('subscription_plan', {}).get('name', 'не выбрано')}\n"
-            f"💰 {order.get('subscription_plan', {}).get('price', 0)}₽\n"
-            f"📊 Статус: {order['status']}\n"
-            f"⏰ {order['created_at']}\n"
-            "─────────────────"
-        )
-        response_parts.append(order_info)
-    
-    # Разбиваем на части если слишком длинное сообщение
-    full_response = "\n".join(response_parts)
-    
-    if len(full_response) > 4000:
-        # Отправляем по частям
-        current_message = response_parts[0]
-        for part in response_parts[1:]:
-            if len(current_message + part) > 4000:
-                await message.answer(current_message)
-                current_message = part
-            else:
-                current_message += part
+    with app.app_context():
+        orders = Order.query.order_by(Order.created_at.desc()).limit(10).all()
         
-        if current_message:
-            await message.answer(current_message)
-    else:
-        await message.answer(full_response)
+        if not orders:
+            await message.answer("📋 Нет заказов")
+            return
+        
+        orders_text = "📋 **Последние 10 заказов:**\n\n"
+        
+        for order in orders:
+            orders_text += (
+                f"**{order.id}**\n"
+                f"├ Пользователь: {order.user.first_name} (@{order.user.username or 'без username'})\n"
+                f"├ План: {order.subscription_plan.name}\n"
+                f"├ Сумма: {order.total_amount}₽\n"
+                f"├ Статус: {order.status.value}\n"
+                f"└ Создан: {order.created_at.strftime('%d.%m.%Y %H:%M')}\n\n"
+            )
+        
+        await message.answer(orders_text, parse_mode="Markdown")

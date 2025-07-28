@@ -1,58 +1,82 @@
-import json
+"""
+Database storage using SQLAlchemy models
+This file is kept for compatibility but functionality moved to models.py
+"""
+
+from models import User, Order, SubscriptionPlan, Payment, BroadcastMessage, db
+from app import app
 import logging
-from datetime import datetime
-from typing import Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
-class OrderStorage:
-    """Простое хранилище заказов в памяти"""
+class DatabaseStorage:
+    """Database storage for orders and users using SQLAlchemy"""
     
-    def __init__(self):
-        self.orders = {}  # user_id -> order_data
-        self.order_counter = 1
+    @staticmethod
+    def create_user(telegram_user):
+        """Create or update user in database"""
+        with app.app_context():
+            user = User.query.filter_by(id=telegram_user.id).first()
+            if not user:
+                user = User()
+                user.id = telegram_user.id
+                user.username = telegram_user.username
+                user.first_name = telegram_user.first_name
+                user.last_name = telegram_user.last_name
+                user.language_code = telegram_user.language_code
+                db.session.add(user)
+            else:
+                user.username = telegram_user.username
+                user.first_name = telegram_user.first_name
+                user.last_name = telegram_user.last_name
+            
+            db.session.commit()
+            return user
     
-    def create_order(self, user_id: int, user_data: Dict[str, Any]) -> str:
-        """Создает новый заказ"""
-        order_id = f"ORDER_{self.order_counter:05d}"
-        self.order_counter += 1
-        
-        order_data = {
-            "order_id": order_id,
-            "user_id": user_id,
-            "username": user_data.get("username", ""),
-            "first_name": user_data.get("first_name", ""),
-            "created_at": datetime.now().isoformat(),
-            "status": "created",
-            "subscription_plan": None,
-            "spotify_login": None,
-            "payment_url": None
-        }
-        
-        self.orders[user_id] = order_data
-        logger.info(f"Создан заказ {order_id} для пользователя {user_id}")
-        return order_id
+    @staticmethod
+    def create_order(user_id, plan_id, total_amount):
+        """Create new order"""
+        with app.app_context():
+            order_count = Order.query.count() + 1
+            order_id = f"ORDER_{order_count:05d}"
+            
+            order = Order()
+            order.id = order_id
+            order.user_id = user_id
+            order.plan_id = plan_id
+            order.total_amount = total_amount
+            db.session.add(order)
+            db.session.commit()
+            return order
     
-    def update_order(self, user_id: int, **kwargs):
-        """Обновляет данные заказа"""
-        if user_id in self.orders:
-            self.orders[user_id].update(kwargs)
-            logger.info(f"Обновлен заказ для пользователя {user_id}: {kwargs}")
+    @staticmethod
+    def get_order(order_id):
+        """Get order by ID"""
+        with app.app_context():
+            return Order.query.filter_by(id=order_id).first()
     
-    def get_order(self, user_id: int) -> Optional[Dict[str, Any]]:
-        """Получает заказ по ID пользователя"""
-        return self.orders.get(user_id)
+    @staticmethod
+    def update_order(order_id, **kwargs):
+        """Update order"""
+        with app.app_context():
+            order = Order.query.filter_by(id=order_id).first()
+            if order:
+                for key, value in kwargs.items():
+                    setattr(order, key, value)
+                db.session.commit()
+            return order
     
-    def complete_order(self, user_id: int):
-        """Завершает заказ"""
-        if user_id in self.orders:
-            self.orders[user_id]["status"] = "completed"
-            self.orders[user_id]["completed_at"] = datetime.now().isoformat()
-            logger.info(f"Заказ для пользователя {user_id} завершен")
+    @staticmethod
+    def get_user_orders(user_id):
+        """Get all orders for user"""
+        with app.app_context():
+            return Order.query.filter_by(user_id=user_id).all()
     
-    def get_all_orders(self) -> Dict[int, Dict[str, Any]]:
-        """Возвращает все заказы"""
-        return self.orders.copy()
+    @staticmethod
+    def get_all_orders():
+        """Get all orders"""
+        with app.app_context():
+            return Order.query.order_by(Order.created_at.desc()).all()
 
-# Глобальный экземпляр хранилища
-order_storage = OrderStorage()
+# Global storage instance
+storage = DatabaseStorage()

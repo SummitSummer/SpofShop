@@ -4,14 +4,15 @@ from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.filters import Command, StateFilter
 from aiogram import F
-
 from config import BOT_TOKEN, ADMIN_ID
 from handlers import (
     cmd_start, handle_order_subscription, handle_support, handle_faq, handle_back_to_menu,
-    process_plan_selection, process_spotify_login, process_payment_completed, 
+    process_plan_selection, process_spotify_login, process_payment_completed,
     process_start_over, handle_unknown_message, cmd_admin_orders
 )
 from states import OrderState
+from models import User, db, init_default_data
+from app import app
 
 # Настройка логирования
 logging.basicConfig(
@@ -22,12 +23,10 @@ logging.basicConfig(
         logging.StreamHandler()
     ]
 )
-
 logger = logging.getLogger(__name__)
 
 async def setup_handlers(dp: Dispatcher):
     """Регистрация обработчиков"""
-    
     # Команды
     dp.message.register(cmd_start, Command("start"))
     dp.message.register(cmd_admin_orders, Command("orders"))
@@ -83,6 +82,11 @@ async def setup_handlers(dp: Dispatcher):
 async def on_startup(bot: Bot):
     """Действия при запуске бота"""
     logger.info("Бот запущен и готов к работе!")
+    
+    # Initialize database with default data
+    with app.app_context():
+        init_default_data()
+        db.session.commit()
     
     # Уведомляем администратора о запуске
     try:
